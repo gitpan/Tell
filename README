@@ -1,9 +1,15 @@
-Tell version 0.0.4
+Tell version 0.0.5
 
 The Tell package is used to print balanced and nested messages
-with a completion status.  These messages indent easily within eachother,
+with a completion status.  These messages indent within eachother,
 autocomplete on scope exit, are easily parsed, may be bulleted,
 can be filtered, and even can show status in color.
+
+This behaviour works across process boundaries.  For example,
+if you have two scripts, one that calls the other (via qx(),
+system(), etc.), the script's output will appear seamless as
+the inner's messages will match the style and indentation
+of the outer.
 
 For example, you write code like this:
 
@@ -38,17 +44,17 @@ INSTALLATION
 
 To install this module, run the following commands:
 
-	perl Makefile.PL
-	make
-	make test
-	make install
+    perl Makefile.PL
+    make
+    make test
+    make install
 
 Alternatively, to install with Module::Build, you can use the following commands:
 
-	perl Build.PL
-	./Build
-	./Build test
-	./Build install
+    perl Build.PL
+    ./Build
+    ./Build test
+    ./Build install
 
 
 DEPENDENCIES

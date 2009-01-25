@@ -4,8 +4,7 @@ use warnings;
 use Test::More tests => 2;
 
 my $out;
-use Tell qw/:all/, {-bullets => 0,
-                    -fh      => \$out,
+use Tell qw/:all/, {-fh      => \$out,
                     -width   => 50};
 
 my $logfnam = "/tmp/50-fd-test-$$.tmp";

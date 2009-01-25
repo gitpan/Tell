@@ -1,8 +1,12 @@
 # TODO:
-#   'print' wrapper to keep track of position,
+#   Hmmm... how to set() the default -fh  vs. set() for a particular -fh?
+#   In tell_done, make a {want_level => nnn} option instead of as an end arg.
+#   Also make silent cloure an option ({silent => 1} instead of NONE severity.
+#   Make a 'print' wrapper to keep track of position,
 #       and POD about interaction with print
+#       then a function to reset the internal position (or use a set() attr)
 #   Make tell() use indirect object notation so it's a drop-in for print
-#   Change name to Msg::Tell ?
+#   Change name to Msg::Tell ?  Term::Tell ? what namespace is best?
 #   Read envvars for secondary defaults, so qx() wrapping looks consistent.
 #   Allow message to be paired as [open,close], or reset the msg w/tell_msg()
 #   Does it make sense to do Severity level filtering?
@@ -16,12 +20,14 @@
 #   Thread support
 
 # Tell - Print messages with balance, indentation, severity, and autoclosure.
+#   CPAN 44 Limit text: "Print with balance, indentation, and closure"
+#   CPAN 44 Limit text: "Print with indentation, status, and closure"
 use warnings;
 use strict;
 use 5.006;
 package Tell;
 
-  our $VERSION = '0.0.4';
+  our $VERSION = '0.0.5';
   use base qw/Exporter/;
   use Scope::Upper 0.06 qw/reap :words/;
 
@@ -88,7 +94,7 @@ sub clone {
 sub import {
     my $class = shift;
 
-    # Yank option pairs, if any, out from the arguments
+    # Yank option sets, if any, out from the arguments
     my %opts = ();
     my @args = ();
     while (@_) {
@@ -114,10 +120,9 @@ sub import {
 sub set {
     my ($this, $opts, %args) = _process_args(@_);
 
-    # Merge 'em
+    # Merge & clean 'em
     %args = (%$opts, %args);
-
-    # Cleanup args
+#    %args = _clean_opts(%args);  ###why does this not work here??
     while (my ($key, $val) = each %args) {
         delete $args{$key};
         $key =~ s/^\s*-?(\w+)\s*/$1/;
@@ -134,6 +139,7 @@ sub set {
                                                                          : 0;
     $this->{closestat} = $args{closestat} || $this->{closestat} || 'DONE';
     $this->{color}     = $args{color}     || $this->{color}     || 0;
+    $this->{ellipsis}  = $args{ellipsis}  || $this->{ellipsis}  || '...';
     $this->{envbase}   = $args{envbase}   || $this->{envbase}   || 'tell_fd';
     $this->{maxdepth}  = exists $args{maxdepth} ? $args{maxdepth}
                                                 : defined $this->{maxdepth} ? $this->{maxdepth}
@@ -173,10 +179,9 @@ sub tell {
 
     #  Tied closure:
     #   If we're returning into a list context,
-    #   then we're tying closure to the scope of the caller's list elements.
-    if (wantarray) {
-        return (Tell::TiedClosure->new($this,$msg));
-    }
+    #   then we're tying closure to the scope of the caller's list element.
+    return Tell::TiedClosure->new($this,$msg)
+        if wantarray;
 
     # Store context
     push @{$this->{msgs}}, $msg;
@@ -210,12 +215,15 @@ sub tell {
     while (defined (my $txt = shift @mlines)) {
         $s = $this->_emit($bullet . $indent . $txt);
         return $s unless $s;
-        $s = $this->_emit(@mlines? "\n" : "...");
+        $s = $this->_emit(@mlines? "\n" : $this->{ellipsis});
         return $s unless $s;
         $tlen = length($txt);
         $bullet = q{ } x $this->{bullet_width}; # Only bullet the first line
     }
-    $this->{pos} += ($this->{step}*$level) + length($bullet) + $tlen + 3;
+    $this->{pos} += ($this->{step}*$level)
+                  + length($bullet)
+                  + $tlen
+                  + length($this->{ellipsis});
     return 1;
 }
 
@@ -442,8 +450,7 @@ sub _bullet {
 sub _clean_opts {
     my %in = @_;
     my %out = ();
-    foreach my $k (keys %in) {
-        my $v = $in{$k};
+    while (my ($k,$v) = each %in) {
         $k =~ s/^-//;
         $out{lc $k} = $v;
     }
@@ -485,7 +492,7 @@ sub _emit {
 }
 
 #
-#
+# The level's envvar for this filehandle
 #
 sub _envvar {
     my $this = shift;
@@ -493,7 +500,7 @@ sub _envvar {
 }
 
 #
-# Return an output identifier for our output stream
+# Return an output identifier for the filehandle
 #
 sub _oid {
     my $fh = shift;
@@ -554,7 +561,8 @@ sub _process_args {
 }
 
 #
-# Wap text to fit within line lengths
+# Wrap text to fit within line lengths
+#   (Do we want to delete this and add a dependency to Text::Wrap ??)
 #
 sub _wrap {
     my ($msg, $min, $max) = @_;
@@ -620,11 +628,13 @@ __END__
 
 Tell - Print messages with balance, indentation, severity, and autoclosure.
 
-***This documentation has not yet been completed. ***
+ ***     This documentation is not yet complete     ***
+ *** I'd like to move this into another namespace,  ***
+ *** perhaps Term::Tell or Msg::Tell.  Suggestions? ***
 
 =head1 VERSION
 
-This document describes Tell version 0.1.4
+This document describes Tell version 0.0.5
 
 
 =head1 SYNOPSIS
@@ -644,7 +654,6 @@ For a script like this:
       tell "DNS Servers";
       #...do_something();
       tell_warn;
-    tell_done;
 
 You get this output:
 
@@ -690,11 +699,11 @@ can get nice output like this:
     Reconfiguring the grappolator...................................... [DONE]
 
 
-=head2 Examples
+=head2 Quick Start
 
-A series of examples will make C<Tell> easier to understand.
+A series of examples will make I<Tell> easier to understand.
 
-=head3 Getting started
+=head3 Basics
 
     use Tell ':all';
     tell "Frobnicating the biffolator";
@@ -712,7 +721,7 @@ continued so it looks like this:
 
 =head3 Autocompletion
 
-In the above example, we end with a C<tell_done> call to indicate that
+In the above example, we end with a I<tell_done> call to indicate that
 the thing we told about (I<Frobnicating the biffolator>) is now done.
 We don't need to do the C<tell_done>.  It will be called automatically
 for us when the current scope is exited (for this example: when the program ends).
@@ -731,7 +740,7 @@ but hang in there and you'll soon see how wonderful it is.
 
 There's many ways a task can complete.  It can be simply DONE, or it can
 complete with an ERROR, or it can be OK, etc.  These completion codes are
-called the I<severity code>s,  C<Tell> defines many different severity codes.
+called the I<severity code>s.  C<Tell> defines many different severity codes.
 The severity codes are borrowed from the UNIX syslog subsystem,
 plus a few from VMS and other sources.  They should be familiar to you.
 
@@ -754,7 +763,9 @@ Those on the same line are considered equal in severity:
     NOTRY => 3,
     UNK   => 2,
 
-Anything severity not listed is given the value 1.
+You may make up your own severities if what you want is not listed.
+Please keep the length to 5 characters or less, otherwise the text may wrap.
+Any severity not listed is given the value 1.
 
 To complete with a different severity, call C<tell_done> with the
 severity code like this:
@@ -822,11 +833,36 @@ Here's the colors:
 To use colors, do this when you I<use> Tell:
 
     use Tell ":all", {-colors => 1};
+        -or-
+    Tell::set(-colors => 1);
 
 Run sample003.pl, included with this module, to see how it looks on
 your terminal.
 
 =head3 Nested Messages
+
+Nested calls to C<tell> will automatically indent with eachother.
+You do this:
+
+    use Tell ":all";
+    tell "Aaa";
+    tell "Bbb";
+    tell "Ccc";
+
+and you'll get output like this:
+
+    Aaa...
+      Bbb...
+        Ccc.......................... [DONE]
+      Bbb............................ [DONE]
+    Aaa.............................. [DONE]
+
+Notice how "Bbb" is indented within the "Aaa" item, and that "Ccc" is
+within the "Bbb" item.  Note too how the Bbb and Aaa items were repeated
+because their initial lines were interrupted by more-inner tasks.
+
+You can control the indentation with the I<-step> attribute,
+and you may turn off or alter the repeated text (Bbb and Aaa) as you wish.
 
 =head3 Nesting Across Processes
 
@@ -837,7 +873,7 @@ Pretty cool, eh?
 
 =head3 Closing with Different Severities, or... Why Autocompletion is Nice
 
-So far our examples have been rather boring.  They're not vey real-world.  
+So far our examples have been rather boring.  They're not vey real-world.
 In a real script, you'll be doing various steps, checking status as you go,
 and bailing out with an error status on each failed check.  It's only when
 you get to the bottom of all the steps that you know it's succeeded.
@@ -845,26 +881,29 @@ Here's where tell becomes more useful:
 
     use Tell qw/:all/, {-closestat => "ERROR"};
     tell "Juxquolating the garfibnotor";
-    return tell_fail
+    return
         if !do_kibvoration();
-    return tell_warn
+    return
         if !do_rumbalation();
     $fail_reason = do_major_cleanup();
     if ($fail_reason) {
-        tell_text $fail_reason;
-        return;
+        return tell_warn {-reason => $fail_reason};
     }
-    tell_ok;
+    tell_ok;Every use of C<tell> increases the current message level
+
 
 In this example, we set C<-closestat> to "ERROR".  This means that if we
-exit scope without doing a tell_done (or its equivalents), a tell_done "ERROR"
-will automatically be called.  This will handle exceptions or other blowouts.
-Next we tell the main title of what we're doing, and then invoke three
-sublevels of processing (the do_* calls).  If any of those fail, we 
-return with the error (tell_fail and tell_warn).  The third captures
-some reason text, and uses tell_text to emit that reason before returning.
-That last return causes a scope exit and autocompletion kicks in,
-giving an "ERROR" as the final severity.
+exit scope without doing a tell_done() (or its equivalents), a tell_error()
+will automatically be called.
+
+Next we do_kibvoration and do_runbalation (whatever these are!).
+If either fails, we simply return.  Automatically then, the tell_error()
+will be called to close out the context.
+
+In the third step, we do_major_cleanup().  If that fails, we explicitly
+close out with a warning (the tell_warn), and we can pass some reason text.
+
+If we get thru all three steps, we close out with an OK.
 
 
 =head3 Output to Other File Handles
@@ -873,6 +912,8 @@ By default, C<Tell> writes its output to STDOUT (or whatever select() is set
 to).  You can tell C<Tell> to use another file handle like this:
 
     use Tell qw/:all/, {-fh => *LOG};
+        -or-
+    Tell::set(-fh => *LOG);
 
 Individual "tell" lines may also take a file handle as the first
 argument, in a manner similar to a print statement:
@@ -891,6 +932,8 @@ For example:
 
     my $out = "";
     use Tell qw/:all/, {-fh => \$out};
+        -or-
+    Tell::set(-fh => \$out);
 
 Individual "tell" lines may also take a scalar reference as the first
 argument:
@@ -919,15 +962,14 @@ not a list context:
       ($stat) = tell "Whatever";    # NOT what it looks like!
 
 In list context, the closure for C<tell> is bound to the list variable's
-scope and autoclosure is disabled.
+scope and autoclosure is disabled.  Probably not what you wanted.
 
-=head3 Bullets
+=head3 Message Bullets
 
 You may preceed each message with a bullet.
-The is usually a single character
+A bullet is usually a single character
 such as a dash or an asterix, but may be multiple characters.
-When it's multiple characters, typically it's just a single character
-with a space on either side.
+You probably want to include a space after each bullet, too.
 
 You may have a different bullet for each nesting level.
 Levels deeper than the number of defined bulelts will use the last bullet.
@@ -939,55 +981,85 @@ just pass the string.  Here's some popular bullet definitions:
     -bullets => "* "
     -bullets => [" * ", " + ", " - ", "   "]
 
+Here's an example with bullets turned on:
 
-=head2 Basic Use
+ * Loading system information...
+ +   Defined IP interface information................................ [OK]
+ +   Running IP interface information................................ [OK]
+ +   Web proxy definitions........................................... [OK]
+ +   NTP Servers..................................................... [OK]
+ +   Timezone settings............................................... [OK]
+ +   Internal clock UTC setting...................................... [OK]
+ +   sshd Revocation settings........................................ [OK]
+ * Loading system information........................................ [OK]
+ * Loading current CAS parameters.................................... [OK]
+ * RDA CAS Setup 8.10-2...
+ +   Updating configuration...
+ -     System parameter updates...................................... [OK]
+ -     Updating CAS parameter values...
+         Updating default web page index............................. [OK]
+ -     Updating CAS parameter values................................. [OK]
+ +   Updating configuration.......................................... [OK]
+ +   Forced stopping web server...................................... [OK]
+ +   Restarting web server........................................... [OK]
+ +   Loading crontab jobs...remcon................................... [OK]
+ * RDA CAS Setup 8.10-2.............................................. [DONE]
 
-=head2 Features
-
-TODO: take the feature snippets from the above example section and put 'em here.
-
-* Automatic closure of messages
-* Colorized text
-* Bulleted output
-* Output independent by file descriptor
-
-=head2 TBS
 
 =head1 EXPORTS
 
 Nothing is exported by default.  You'll want to do one of these:
 
     use Tell qw/tell tell_done/;    # To get just these two functions
-    use Tell qw/:all/;              # To get all functions
     use Tell qw/:syslog/;           # To get base functions plus syslog severities only
+    use Tell qw/:all/;              # To get all functions
 
 Most of the time, you'll want the :all form.
 
+
 =head1 INTERFACE
 
-=over 4
+Although an object-oriented interface exists for I<Tell>, it is uncommon
+to use it that way.  The recommended interface is to use the class methods
+in a procedural fashion.
+Use C<tell()> similar to how you would use C<print()>.
 
-=item C<base>
+=head2 Methods
 
-internal base object accessor.
+The following subsections list the methods available:
 
-=item C<clone>
+=head3 C<base>
 
-Clones the current object and returns a new copy.
+Internal base object accessor.  Called with no arguments, it returns
+the Tell object associated with the default output filehandle.
+When called with a filehandle, it returns the Tell object associated
+with that filehandle.
+
+=head3 C<clone>
+
+Clones the current I<Tell> object and returns a new copy.
 Any given attributes override the cloned object.
+In most cases you will NOT need to clone I<Tell> objects yourself.
 
-=item C<new>
+=head3 C<new>
 
-Constructor for a Tell object.
+Constructor for a Tell:: object.
+In most cases you will B<NOT> need to create I<Tell> objects yourself.
 
-=item C<set>
+=head3 C<set>
 
-Sets attributes on a Tell object.
+Sets attributes on a Tell object, for example to enable colored severities,
+or to set the indentation step size.  You will usually
+call it as a class method, like this:
 
-=item C<tell>
+        Tell::set(-fh    => *MYLOG,
+                  -step  => 3,
+                  -color => 1);
+
+
+=head3 C<tell>
 
 Use C<tell> to emit a message similar to how you would use C<print>.
-Every use of C<tell> increases the current message level
 
 Procedural call syntax:
 
@@ -1003,51 +1075,51 @@ Object-oriented call syntax:
     $tobj->tell (\$out, LIST)
     $tobj->tell ({ATTRS}, LIST)
 
-=item C<tell_done>
+=head3 C<tell_done>
 
 Closes the current message level, re-printing the message
 if necessary, printing dot-dot trailers to get proper alignment,
 and the given completion severity.
 
-=item C<tell_alert>
+=head3 C<tell_alert>
 
-=item C<tell_crit>
+=head3 C<tell_crit>
 
-=item C<tell_debug>
+=head3 C<tell_debug>
 
-=item C<tell_emerg>
+=head3 C<tell_emerg>
 
-=item C<tell_error>
+=head3 C<tell_error>
 
-=item C<tell_fail>
+=head3 C<tell_fail>
 
-=item C<tell_fatal>
+=head3 C<tell_fatal>
 
-=item C<tell_info>
+=head3 C<tell_info>
 
-=item C<tell_note>
+=head3 C<tell_note>
 
-=item C<tell_notry>
+=head3 C<tell_notry>
 
-=item C<tell_ok>
+=head3 C<tell_ok>
 
-=item C<tell_unk>
+=head3 C<tell_unk>
 
-=item C<tell_warn>
+=head3 C<tell_warn>
 
-All these are convienence methods that call C<tell_done>) 
+All these are convienence methods that call C<tell_done()>
 with the indicated severity.  For example, C<tell_fail()> is
 equivalent to C<tell_done "FAIL">.
 
-=item C<tell_none>
+=head3 C<tell_none>
 
 This is equivalent to tell_done, except that it does NOT print
 a wrapup line or a completion severity.  It simply closes out
 the current level with no message.
 
-=item C<tell_over>
+=head3 C<tell_over>
 
-=item C<tell_prog>
+=head3 C<tell_prog>
 
 Tells a progress indication, such as a percent or M/N or whatever
 you devise.  In fact, this simply puts *any* string on the same line
@@ -1092,35 +1164,187 @@ Here's some styles to get you thinking:
                             (liftoff!)
 
 
-=item C<tell_text>
+=head3 C<tell_text>
 
 This prints the given text without changing the current level.
 Use it to give additional information, such as a blob of description.
 A lengthy lines will be wrapped to fit nicely in the given width.
 
-=back
+=head2 Attributes
 
+The I<tell*> functions, I<set()>, and I<use Tell> take the following
+optional attributes.  Supply options and their values as a hash reference,
+like this:
+
+    use Tell ':all', {-fh => \$out,
+                      -step => 1,
+                      -color => 1};
+    tell {-fh => *LOG}, "This and that";
+    tell {-color => 1}, "More of the same";
+
+The leading dash on the attribute name is optional, but encouraged;
+and the attribute may be any letter case, but all lowercase is preferred.
+
+=head3 -adjust_level
+
+Only valid for C<tell> and C<tell_text>.  Supply an integer value.
+
+This adjusts the indentation level of the message inwards (positive) or
+outwards (negative) for just this message.  It does not affect filtering
+via the I<maxdepth> attribute.  But it does affect the bullet character(s)
+if bullets are enabled.
+
+=head3 -bullets
+
+Enables or disables the use of bullet characters in front of messages.
+Set to a false value to disable the use of bullets - this is the default.
+Set to a scalar character string to enable that character(s) as the bullet.
+Set to an array reference of strings to use different characters for each
+nesting level.  See L</Message Bullets>.
+
+=head3 -closestat
+
+Sets the severity code to use when autocompleting a tell message.
+This is set to "DONE" by default.  See
+L</Closing with Different Severities, or... Why Autocompletion is Nice> above.
+
+=head3 -color
+
+Set to a true value to render the completion severities in color.
+ANSI escape sequences are used for the colors.  The default is
+to not use colors.  See L</Severity Colors> above.
+
+=head3 -ellipsis
+
+Sets the string to use for the ellipsis at the end of a message.
+The default is "..." (three periods).  Set it to a short string.
+This attribute is often used in combination with I<-trailer>.
+
+    Frobnicating the bellfrey...
+                             ^^^_____ These dots are the ellipsis
+
+=head3 -envbase
+
+May only be set before making the first I<tell()> call.
+
+Sets the base part of the environment variable used to maintain
+level-context across process calls.  See L</CONFIGURATION AND ENVIRONMENT>.
+
+=head3 -fh
+
+Designates the filehandle or scalar to receive output.  You may alter
+the default output, or specify it on individual tell* calls.
+
+    use Tell ':all', {-fh => *STDERR};  # Default output to STDERR
+    tell "This goes to STDERR";
+    tell {-fh => *STDOUT}, "This goes to STDOUT";
+    tell {-fh => \$outstr}, "This goes to a string";
+
+Note, the tell* methods have a shorthand notation for the filehandle.
+If the first argument is a filehandle or a scalar reference, it is
+presumed to be the -fh attribute.  So the last two lines of the above
+example could be written like this:
+
+    tell *STDOUT, "This goes to STDOUT";
+    tell \$outstr, "This goes to a string";
+
+The default filehandle is whatever was C<select()>'ed, which
+is typically STDOUT.
+
+=head3 -maxdepth
+
+Only valid with C<set()> and I<use Tell>.
+
+Filters messages by setting the maximum depth of messages to emit.
+Set to undef (the default) to see all messages.
+Set to 0 to disable B<all> messages from Tell.
+Set to a positive integer to see only messages at that depth and less.
+
+=head3 -reason
+
+Only valid for tell_done (and its equivalents like tell_warn,
+tell_error, etc.).
+
+Causes tell_done() to emit the given reason string on the following line(s),
+indented underneath the completed message.  This is useful to supply additional
+failure text to explain to a user why a certain task failed.
+
+This programming metaphor is commonly used:
+
+    .
+    .
+    .
+    my $fail_reason = do_something_that_may_fail();
+    return tell_fail {-reason => $fail_reason)
+        if $fail_reason;
+    .
+    .
+    .
+
+=head3 -step
+
+Sets the indentation step size (number of spaces) for nesting messages.
+The default is 2.
+Set to 0 to disable indentation - all messages will be left justified.
+Set to a small positive integer to use that step size.
+
+=head3 -trailer
+
+The B<single> character used to trail after a message up to the
+completion severity.
+The default is the dot (the period, ".").  Here's what messages
+look like if you change it to an underscore:
+
+  The code:
+    use Tell ':all', {-trailer => '_'};
+    tell "Xerikineting";
+
+  The output:    use Tell ':all';
+    use Term::Size::Any 'chars';
+    my ($cols, $rows) = chars();
+    Tell::set(-width => $cols);
+
+    Xerikineting...______________________________ [DONE]
+
+Note that the elipses after the message are still "...";
+use -elipses to change that string as well.
+
+=head3 -width
+
+Set to the terminal width of your output device.  I<Tell> has no
+idea how wide your terminal screen is, so use this attribute to
+indicate the width.  The default is 80.
+
+You may want to use L<Term::Size::Any|Term::Size::Any> to determine your device's width:
+
+    use Tell ':all';
+    use Term::Size::Any 'chars';
+    my ($cols, $rows) = chars();
+    Tell::set(-width => $cols);
+      .
+      .
+      .
 
 =head1 CONFIGURATION AND ENVIRONMENT
 
-Tell requires no configuration files or environment variables.
+I<Tell> requires no configuration files or environment variables.
 However, it does set environment variables with this form of name:
 
     tell_fd#_th#
 
-This _envvar holds the current level of messages (represented
+This envvar holds the current level of messages (represented
 visually by indentation), so that indentation can be smoothly
 maintained across process contexts.
 
-In this _envvar's name, fd# is the fileno() of the output file handle to which
+In this envvar's name, fd# is the fileno() of the output file handle to which
 the messages are written.  By default output is to STDERR,
-which has a fileno of 2, so the _envvar would be C<tell_fd2>.
+which has a fileno of 2, so the envvar would be C<tell_fd2>.
 If output is being written to a string (C<-fh => \$some_string>),
 then fd# is the string "str", for example C<tell_fdstr>
 
 When Tell is used with threads, the thread ID is placed
-in th# in the _envvar.
-Thus for thread #7, writing Tell messages to STDERR, the _envvar
+in th# in the envvar.
+Thus for thread #7, writing Tell messages to STDERR, the envvar
 would be C<tell_fd2_th7>.
 For the main thread, th# and the leading underscore are omitted.
 
@@ -1128,7 +1352,7 @@ Under normal operation, this environment variable is deleted
 before the program exits, so generally you won't see it.
 
 Note: If your program's output seems excessively indented, it may be
-that this _envvar has been left over from some other aborted run.
+that this envvar has been left over from some other aborted run.
 Check for it and delete it if found.
 
 =head1 DEPENDENCIES
@@ -1152,7 +1376,7 @@ None reported.
     limitations on the size of data sets, special cases that are not
     (yet) handled, etc.
 
-Limitation:  Output in a threaded environment isn't always pretty.  
+Limitation:  Output in a threaded environment isn't always pretty.
 It works OK and won't blow up, but indentation may get a bit screwy.
 
 Bugs: No bugs have been reported.
@@ -1164,7 +1388,9 @@ L<http://rt.cpan.org>.
 
 =head1 SEE ALSO
 
-Somewhat similar but not quite the same are:
+To format C<Tell> output to HTML, use Tell::Format::HTML .
+
+Other modules like C<Tell> but not quite the same:
 
     Debug::Message
     Log::Dispatch
@@ -1176,7 +1402,7 @@ Steve Roscio  C<< <roscio@cpan.org> >>
 
 =head1 ACKNOWLEDGEMENTS
 
-Thanx to Paul Vencel for being an idea soundingboard for this package.
+Thanx to Paul Vencel for his review of this package.
 
 =head1 LICENCE AND COPYRIGHT
 
