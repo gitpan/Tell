@@ -1,4 +1,4 @@
-Tell version 0.0.5
+Tell version 0.0.6
 
 The Tell package is used to print balanced and nested messages
 with a completion status.  These messages indent within eachother,

@@ -1,5 +1,9 @@
 Revision history for Tell
 
+0.0.6  Sun Jan 25 19:07:14 MST 2009
+        Fixed perlcritic.t so it won't blow the test stack
+          if Test::Perl::Critic isn't installed.
+
 0.0.5  Sun Jan 25 14:57:13 MST 2009
         Documentation updates.
 

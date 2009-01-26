@@ -24,10 +24,10 @@
 #   CPAN 44 Limit text: "Print with indentation, status, and closure"
 use warnings;
 use strict;
-use 5.006;
+use 5.008;
 package Tell;
 
-  our $VERSION = '0.0.5';
+  our $VERSION = '0.0.6';
   use base qw/Exporter/;
   use Scope::Upper 0.06 qw/reap :words/;
 
@@ -1056,6 +1056,7 @@ call it as a class method, like this:
                   -step  => 3,
                   -color => 1);
 
+See L</Attributes>.
 
 =head3 C<tell>
 
@@ -1109,7 +1110,7 @@ and the given completion severity.
 
 All these are convienence methods that call C<tell_done()>
 with the indicated severity.  For example, C<tell_fail()> is
-equivalent to C<tell_done "FAIL">.
+equivalent to C<tell_done "FAIL">.  See L</Completion Severity>.
 
 =head3 C<tell_none>
 
@@ -1299,11 +1300,7 @@ look like if you change it to an underscore:
     use Tell ':all', {-trailer => '_'};
     tell "Xerikineting";
 
-  The output:    use Tell ':all';
-    use Term::Size::Any 'chars';
-    my ($cols, $rows) = chars();
-    Tell::set(-width => $cols);
-
+  The output:
     Xerikineting...______________________________ [DONE]
 
 Note that the elipses after the message are still "...";

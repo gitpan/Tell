@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Tell
-version:             0.0.5
+version:             0.0.6
 abstract:            Print messages with balance, indentation, severity, and autoclosure.
 license:             ~
 author:              
